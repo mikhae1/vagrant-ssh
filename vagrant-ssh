@@ -1,0 +1,94 @@
+#!/usr/bin/env bash
+
+VAGRANT_HOST=${VAGRANT_HOST:-'localhost'}
+
+main() {
+  parse_opts "$@"
+
+  env_string=''
+  init_env
+
+  cwd=${PWD##*/}
+  remote_path="~/${cwd}-$(date +'%d.%m.%y')"
+  remote_dst="${VAGRANT_HOST}:${remote_path}"
+  rsync_options=''
+
+  if [[ "$FORCE" == true ]]; then
+    log "removing $remote_dst"
+    ssh "$VAGRANT_HOST" "rm -rf $remote_path"
+  fi
+
+  log "copy current directory to $remote_dst"
+  [[ "$VERBOSE" == true ]] && rsync_options="-v"
+  rsync -chazP -i --exclude=".vagrant" "$rsync_options" . "$remote_dst"
+
+  log "$remote_dst> $env_string vagrant $COMMAND"
+  ssh -t "$VAGRANT_HOST" "cd $remote_path && \
+    $env_string \
+    vagrant $COMMAND"
+}
+
+log() {
+  echo -e "\n> $@"
+}
+
+init_env() {
+  ENVS=(
+    'VAGRANT_HOST'
+    'VAGRANT_VAGRANTFILE'
+    'VAGRANT_DEBUG_LAUNCHER'
+    'VAGRANT_DEFAULT_PROVIDER'
+    'VAGRANT_PREFERRED_PROVIDERS'
+    'VAGRANT_BOX_UPDATE_CHECK_DISABLE'
+    'VAGRANT_CHECKPOINT_DISABLE'
+    'VAGRANT_CWD'
+    'VAGRANT_DOTFILE_PATH'
+    'VAGRANT_HOME'
+    'VAGRANT_LOG'
+    'VAGRANT_NO_COLOR'
+    'VAGRANT_FORCE_COLOR'
+    'VAGRANT_ALLOW_PLUGIN_SOURCE_ERRORS'
+    'VAGRANT_NO_PLUGINS'
+    'VAGRANT_NO_PARALLEL'
+    'VAGRANT_DETECTED_OS'
+    'VAGRANT_DETECTED_ARCH'
+    'VAGRANT_WINPTY_DISABLE'
+    'VAGRANT_PREFER_SYSTEM_BIN'
+    'VAGRANT_SKIP_SUBPROCESS_JAILBREAK'
+    'VAGRANT_DISABLE_VBOXSYMLINKCREATE'
+    'VAGRANT_DISABLE_RESOLV_REPLACE'
+  )
+
+  for env in "${ENVS[@]}"; do
+    [ -z "${!env}" ] || env_string="${env}=${!env} ${env_string}"
+  done
+}
+
+parse_opts() {
+  usage() {
+    echo -e "Usage: $0 [options] COMMAND"
+    echo -e "  -f \t\t\t Remove remote directory first"
+    echo -e "  -v \t\t\t Turn on verbose output"
+    echo -e "  -s VAGRANT_HOST \t Set vagrant host (default = $VAGRANT_HOST)"
+    echo -e "  -h \t\t\t Display this message"
+    echo
+  }
+
+  VERBOSE=false
+  FORCE=false
+  while getopts "h?vfs:" opt; do
+    case "$opt" in
+    h|\?) usage; exit 0
+    ;;
+    v) VERBOSE=true
+    ;;
+    f) FORCE=true
+    ;;
+    s) VAGRANT_HOST="$OPTARG"
+    esac
+  done
+
+  COMMAND="${@:$OPTIND:1}"
+}
+
+main "$@"
